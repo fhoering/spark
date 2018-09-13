@@ -76,7 +76,7 @@ class SparkContext(object):
 
     def __init__(self, master=None, appName=None, sparkHome=None, pyFiles=None,
                  environment=None, batchSize=0, serializer=PickleSerializer(), conf=None,
-                 gateway=None, jsc=None, profiler_cls=BasicProfiler):
+                 gateway=None, jsc=None, profiler_cls=BasicProfiler, pexFile = None):
         """
         Create a new SparkContext. At least the master and app name should be set,
         either through the named parameters here or through C{conf}.
@@ -115,14 +115,14 @@ class SparkContext(object):
         SparkContext._ensure_initialized(self, gateway=gateway, conf=conf)
         try:
             self._do_init(master, appName, sparkHome, pyFiles, environment, batchSize, serializer,
-                          conf, jsc, profiler_cls)
+                          conf, jsc, profiler_cls, pexFile)
         except:
             # If an error occurs, clean up in order to allow future SparkContext creation:
             self.stop()
             raise
 
     def _do_init(self, master, appName, sparkHome, pyFiles, environment, batchSize, serializer,
-                 conf, jsc, profiler_cls):
+                 conf, jsc, profiler_cls, pexFile):
         self.environment = environment or {}
         # java gateway must have been launched at this point.
         if conf is not None and conf._jconf is not None:
@@ -188,7 +188,10 @@ class SparkContext(object):
         self._javaAccumulator = self._jvm.PythonAccumulatorV2(host, port)
         self._jsc.sc().register(self._javaAccumulator)
 
-        self.pythonExec = os.environ.get("PYSPARK_PYTHON", 'python')
+        if pexFile is not None:
+            self.pythonExec = "./" + os.path.basename(pexFile)
+        else:
+            self.pythonExec = os.environ.get("PYSPARK_PYTHON", 'python')
         self.pythonVer = "%d.%d" % sys.version_info[:2]
 
         if sys.version_info < (2, 7):
@@ -203,6 +206,9 @@ class SparkContext(object):
         SparkFiles._sc = self
         root_dir = SparkFiles.getRootDirectory()
         sys.path.insert(1, root_dir)
+
+        if pexFile is not None:
+            self.addFile(pexFile)
 
         # Deploy any code dependencies specified in the constructor
         self._python_includes = list()

@@ -117,9 +117,21 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
       serverSocket = new ServerSocket(0, 1, InetAddress.getByAddress(Array(127, 0, 0, 1)))
 
       // Create and start the worker
-      val pb = new ProcessBuilder(Arrays.asList(pythonExec, "-m", "pyspark.worker"))
+      val processArgs = {
+        if (!isPexFile(pythonExec)) {
+          Arrays.asList(pythonExec, "-m", "pyspark.worker")
+        }
+        else {
+          Arrays.asList(SparkFiles.get(pythonExec))
+        }
+      }
+      val pb = new ProcessBuilder(processArgs)
       val workerEnv = pb.environment()
       workerEnv.putAll(envVars.asJava)
+      if (isPexFile(pythonExec)) {
+        workerEnv.put("PEX_MODULE", "pyspark.worker")
+        workerEnv.put("PEX_ROOT", "/tmp/.pex")
+      }
       workerEnv.put("PYTHONPATH", pythonPath)
       // This is equivalent to setting the -u flag; we use it because ipython doesn't support -u:
       workerEnv.put("PYTHONUNBUFFERED", "YES")
@@ -159,9 +171,22 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
 
       try {
         // Create and start the daemon
-        val pb = new ProcessBuilder(Arrays.asList(pythonExec, "-m", "pyspark.daemon"))
+        val processArgs = {
+          if (!isPexFile(pythonExec)) {
+            Arrays.asList(pythonExec, "-m", "pyspark.daemon")
+          }
+          else {
+            Arrays.asList(SparkFiles.get(pythonExec))
+          }
+        }
+
+        val pb = new ProcessBuilder(processArgs)
         val workerEnv = pb.environment()
         workerEnv.putAll(envVars.asJava)
+        if (isPexFile(pythonExec)) {
+          workerEnv.put("PEX_MODULE", "pyspark.daemon")
+          workerEnv.put("PEX_ROOT", "/tmp/.pex")
+        }
         workerEnv.put("PYTHONPATH", pythonPath)
         workerEnv.put("PYTHON_WORKER_FACTORY_SECRET", authHelper.secret)
         // This is equivalent to setting the -u flag; we use it because ipython doesn't support -u:
@@ -204,6 +229,13 @@ private[spark] class PythonWorkerFactory(pythonExec: String, envVars: Map[String
       // Important: don't close daemon's stdin (daemon.getOutputStream) so it can correctly
       // detect our disappearance.
     }
+  }
+
+  /**
+    * Check if the provided pythonExec is a pex package
+    */
+  private def isPexFile(pythonExec: String): Boolean = {
+    pythonExec.endsWith(".pex")
   }
 
   /**
